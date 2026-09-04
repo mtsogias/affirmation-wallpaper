@@ -335,12 +335,13 @@ struct SettingsRootView: View {
                     ClickSurface {
                         withAnimation(.easeInOut(duration: 0.15)) { tab = item }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, minHeight: 32)
+                .frame(maxWidth: .infinity)
+                .frame(height: 32)
             }
         }
         .padding(3)
+        .frame(height: 38)
         .background(
             Capsule(style: .continuous)
                 .fill(Color.primary.opacity(0.04))
@@ -403,9 +404,9 @@ private struct GeneralTab: View {
                             .padding(.horizontal, 10)
                             .allowsHitTesting(false)
                             ClickSurface { store.setLanguage(lang) }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
                     }
                 }
             }
