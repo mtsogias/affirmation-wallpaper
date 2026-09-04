@@ -6,7 +6,7 @@ An aurora desktop for the Mac. Affirmations and images appear in empty space —
 
 1. Get **[AffirmationWallpaper.zip](https://github.com/mtsogias/affirmation-wallpaper/releases/latest/download/AffirmationWallpaper.zip)**
 2. Unzip
-3. Drag `AffirmationWallpaper.app` into **Applications**
+3. Drag `Affirmation Wallpaper.app` into **Applications**
 4. Double-click to open
 
 On first launch: right-click the app → **Open** (macOS warns because the app is not notarized yet).
@@ -27,4 +27,4 @@ Requires macOS 14 or later.
 xcodebuild -scheme AffirmationWallpaper -configuration Release -derivedDataPath build
 ```
 
-The app is at `build/Build/Products/Release/AffirmationWallpaper.app`.
+The app is at `build/Build/Products/Release/Affirmation Wallpaper.app`.

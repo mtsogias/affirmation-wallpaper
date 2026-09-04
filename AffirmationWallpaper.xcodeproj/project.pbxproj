@@ -126,6 +126,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.affirmation.wallpaper";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_NAME = "Affirmation Wallpaper.app";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Debug;
@@ -139,6 +140,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.affirmation.wallpaper";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_NAME = "Affirmation Wallpaper.app";
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
