@@ -1,0 +1,215 @@
+import Foundation
+
+enum AppLanguage: String, CaseIterable, Identifiable {
+    case de, en, fr, es
+
+    var id: String { rawValue }
+
+    /// Name shown in the picker, always in that language.
+    var nativeName: String {
+        switch self {
+        case .de: return "Deutsch"
+        case .en: return "English"
+        case .fr: return "Français"
+        case .es: return "Español"
+        }
+    }
+
+    static var resolved: AppLanguage {
+        if let raw = UserDefaults.standard.string(forKey: "language"),
+           let lang = AppLanguage(rawValue: raw) {
+            return lang
+        }
+        switch Locale.current.language.languageCode?.identifier {
+        case "de": return .de
+        case "fr": return .fr
+        case "es": return .es
+        default: return .en
+        }
+    }
+}
+
+enum Loc {
+    static func t(_ key: String, _ lang: AppLanguage = .resolved) -> String {
+        table[lang]?[key] ?? table[.en]?[key] ?? key
+    }
+
+    static let table: [AppLanguage: [String: String]] = [
+        .de: [
+            "settings": "Einstellungen",
+            "edit": "Bearbeiten",
+            "undo": "Rückgängig",
+            "redo": "Wiederholen",
+            "quit": "AffirmationWallpaper beenden",
+            "tabGeneral": "Allgemein",
+            "tabAppearance": "Darstellung",
+            "tabAffirmations": "Affirmationen",
+            "tabImages": "Bilder",
+            "language": "Sprache",
+            "languageHint": "Gilt für Menüs und dieses Fenster. Deine Affirmationen bleiben in der Sprache, in der du sie geschrieben hast.",
+            "brightness": "Helligkeit",
+            "hue": "Farbton",
+            "auroraSpeed": "Aurora-Geschwindigkeit",
+            "frameRate": "Bildrate",
+            "fps": "FPS",
+            "messageInterval": "Abstand zwischen Affirmationen",
+            "imageInterval": "Abstand zwischen Bildern",
+            "off": "aus",
+            "yourSentences": "Deine Sätze",
+            "emptyAffirmations": "Noch keine Affirmationen. Schreib unten eine und drück Return.",
+            "newAffirmation": "Neue Affirmation …",
+            "add": "Hinzufügen",
+            "visionBoard": "Vision Board",
+            "noFolder": "Kein Ordner gewählt",
+            "noFolderHint": "Wähle den Ordner mit deinen Bildern. Die erscheinen auf dem Aurora-Hintergrund.",
+            "chooseFolder": "Ordner wählen…",
+            "chooseOtherFolder": "Anderen Ordner…",
+            "pickFolderMessage": "Ordner mit den Vision-Board-Bildern",
+            "choose": "Wählen",
+            "ignoredSubfolders": "Diese Unterordner nicht zeigen",
+            "ignoreSubfolder": "Unterordner ignorieren…",
+            "ignore": "Ignorieren",
+            "excludeFolderMessage": "Unterordner, dessen Bilder nicht erscheinen sollen (z. B. Archiv)",
+            "noExclusions": "Keine. Wenn im Vision Board ein Archiv-Ordner liegt, kannst du ihn hier ignorieren.",
+            "undoSlider": "Regler",
+            "undoFolder": "Bilderordner",
+            "undoExclude": "Ignorierte Unterordner",
+            "undoAffirmation": "Affirmation",
+            "openAtLogin": "Bei der Anmeldung öffnen",
+            "openAtLoginHint": "Startet die Aurora automatisch, wenn du dich einloggst.",
+            "about": "Über",
+        ],
+        .en: [
+            "settings": "Settings",
+            "edit": "Edit",
+            "undo": "Undo",
+            "redo": "Redo",
+            "quit": "Quit AffirmationWallpaper",
+            "tabGeneral": "General",
+            "tabAppearance": "Appearance",
+            "tabAffirmations": "Affirmations",
+            "tabImages": "Images",
+            "language": "Language",
+            "languageHint": "Applies to menus and this window. Your affirmations stay in the language you wrote them in.",
+            "brightness": "Brightness",
+            "hue": "Hue",
+            "auroraSpeed": "Aurora speed",
+            "frameRate": "Frame rate",
+            "fps": "FPS",
+            "messageInterval": "Time between affirmations",
+            "imageInterval": "Time between images",
+            "off": "off",
+            "yourSentences": "Your sentences",
+            "emptyAffirmations": "No affirmations yet. Type one below and press Return.",
+            "newAffirmation": "New affirmation …",
+            "add": "Add",
+            "visionBoard": "Vision board",
+            "noFolder": "No folder selected",
+            "noFolderHint": "Pick the folder with your images. They appear on the aurora background.",
+            "chooseFolder": "Choose folder…",
+            "chooseOtherFolder": "Choose another…",
+            "pickFolderMessage": "Folder with vision board images",
+            "choose": "Choose",
+            "ignoredSubfolders": "Don’t show these subfolders",
+            "ignoreSubfolder": "Ignore a subfolder…",
+            "ignore": "Ignore",
+            "excludeFolderMessage": "Subfolder whose images should stay hidden (e.g. Archive)",
+            "noExclusions": "None. If the vision board has an Archive folder, ignore it here.",
+            "undoSlider": "Slider",
+            "undoFolder": "Image folder",
+            "undoExclude": "Ignored subfolders",
+            "undoAffirmation": "Affirmation",
+            "openAtLogin": "Open at login",
+            "openAtLoginHint": "Starts the aurora automatically when you log in.",
+            "about": "About",
+        ],
+        .fr: [
+            "settings": "Réglages",
+            "edit": "Édition",
+            "undo": "Annuler",
+            "redo": "Rétablir",
+            "quit": "Quitter AffirmationWallpaper",
+            "tabGeneral": "Général",
+            "tabAppearance": "Apparence",
+            "tabAffirmations": "Affirmations",
+            "tabImages": "Images",
+            "language": "Langue",
+            "languageHint": "S’applique aux menus et à cette fenêtre. Tes affirmations restent dans la langue où tu les as écrites.",
+            "brightness": "Luminosité",
+            "hue": "Teinte",
+            "auroraSpeed": "Vitesse de l’aurore",
+            "frameRate": "Images par seconde",
+            "fps": "FPS",
+            "messageInterval": "Intervalle entre les affirmations",
+            "imageInterval": "Intervalle entre les images",
+            "off": "off",
+            "yourSentences": "Tes phrases",
+            "emptyAffirmations": "Pas encore d’affirmations. Écris-en une ci-dessous et appuie sur Retour.",
+            "newAffirmation": "Nouvelle affirmation …",
+            "add": "Ajouter",
+            "visionBoard": "Vision board",
+            "noFolder": "Aucun dossier",
+            "noFolderHint": "Choisis le dossier avec tes images. Elles apparaissent sur l’aurore.",
+            "chooseFolder": "Choisir un dossier…",
+            "chooseOtherFolder": "Autre dossier…",
+            "pickFolderMessage": "Dossier des images du vision board",
+            "choose": "Choisir",
+            "ignoredSubfolders": "Ne pas afficher ces sous-dossiers",
+            "ignoreSubfolder": "Ignorer un sous-dossier…",
+            "ignore": "Ignorer",
+            "excludeFolderMessage": "Sous-dossier dont les images restent cachées (p. ex. Archives)",
+            "noExclusions": "Aucun. Si le vision board contient un dossier Archives, ignore-le ici.",
+            "undoSlider": "Curseur",
+            "undoFolder": "Dossier d’images",
+            "undoExclude": "Sous-dossiers ignorés",
+            "undoAffirmation": "Affirmation",
+            "openAtLogin": "Ouvrir à la connexion",
+            "openAtLoginHint": "Lance l’aurore automatiquement à l’ouverture de la session.",
+            "about": "À propos",
+        ],
+        .es: [
+            "settings": "Ajustes",
+            "edit": "Editar",
+            "undo": "Deshacer",
+            "redo": "Rehacer",
+            "quit": "Salir de AffirmationWallpaper",
+            "tabGeneral": "General",
+            "tabAppearance": "Apariencia",
+            "tabAffirmations": "Afirmaciones",
+            "tabImages": "Imágenes",
+            "language": "Idioma",
+            "languageHint": "Aplica a los menús y a esta ventana. Tus afirmaciones se quedan en el idioma en que las escribiste.",
+            "brightness": "Brillo",
+            "hue": "Tono",
+            "auroraSpeed": "Velocidad de la aurora",
+            "frameRate": "Imágenes por segundo",
+            "fps": "FPS",
+            "messageInterval": "Tiempo entre afirmaciones",
+            "imageInterval": "Tiempo entre imágenes",
+            "off": "off",
+            "yourSentences": "Tus frases",
+            "emptyAffirmations": "Aún no hay afirmaciones. Escribe una abajo y pulsa Retorno.",
+            "newAffirmation": "Nueva afirmación …",
+            "add": "Añadir",
+            "visionBoard": "Vision board",
+            "noFolder": "Ninguna carpeta",
+            "noFolderHint": "Elige la carpeta con tus imágenes. Aparecen sobre la aurora.",
+            "chooseFolder": "Elegir carpeta…",
+            "chooseOtherFolder": "Otra carpeta…",
+            "pickFolderMessage": "Carpeta con las imágenes del vision board",
+            "choose": "Elegir",
+            "ignoredSubfolders": "No mostrar estas subcarpetas",
+            "ignoreSubfolder": "Ignorar una subcarpeta…",
+            "ignore": "Ignorar",
+            "excludeFolderMessage": "Subcarpeta cuyas imágenes no deben verse (p. ej. Archivo)",
+            "noExclusions": "Ninguna. Si el vision board tiene una carpeta Archivo, ignórala aquí.",
+            "undoSlider": "Control",
+            "undoFolder": "Carpeta de imágenes",
+            "undoExclude": "Subcarpetas ignoradas",
+            "undoAffirmation": "Afirmación",
+            "openAtLogin": "Abrir al iniciar sesión",
+            "openAtLoginHint": "Arranca la aurora automáticamente al entrar en el Mac.",
+            "about": "Acerca de",
+        ],
+    ]
+}

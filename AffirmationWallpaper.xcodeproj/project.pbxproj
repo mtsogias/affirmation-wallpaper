@@ -8,6 +8,7 @@
 		B10001 /* main.swift in Sources */ = { isa = PBXBuildFile; fileRef = B20001; };
 		B10002 /* Assets.xcassets in Resources */ = { isa = PBXBuildFile; fileRef = B20003; };
 		B10003 /* Settings.swift in Sources */ = { isa = PBXBuildFile; fileRef = B20004; };
+		B10004 /* Loc.swift in Sources */ = { isa = PBXBuildFile; fileRef = B20005; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -15,12 +16,13 @@
 		B20002 /* Info.plist */ = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B20003 /* Assets.xcassets */ = { isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B20004 /* Settings.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		B20005 /* Loc.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Loc.swift; sourceTree = "<group>"; };
 		B30001 /* AffirmationWallpaper.app */ = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AffirmationWallpaper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		G10001 /* Products */ = { isa = PBXGroup; children = ( B30001 ); name = Products; sourceTree = "<group>"; };
-		G10002 /* AffirmationWallpaper */ = { isa = PBXGroup; children = ( B20001, B20004, B20002, B20003 ); path = AffirmationWallpaper; sourceTree = "<group>"; };
+		G10002 /* AffirmationWallpaper */ = { isa = PBXGroup; children = ( B20001, B20004, B20005, B20002, B20003 ); path = AffirmationWallpaper; sourceTree = "<group>"; };
 		G10000 /* Root */ = { isa = PBXGroup; children = ( G10002, G10001 ); sourceTree = "<group>"; };
 /* End PBXGroup section */
 
@@ -59,7 +61,7 @@
 		P10001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = ( B10001, B10003 );
+			files = ( B10001, B10003, B10004 );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

@@ -581,8 +581,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
             object: nil
         )
 
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Esc
+                if let settings = self?.settingsWindow, settings.isVisible, settings.isKeyWindow {
+                    settings.orderOut(nil)
+                    return nil
+                }
                 NSApp.terminate(nil)
             }
             return event
@@ -607,14 +611,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     private var settingsStore: SettingsStore?
 
     private func setupMenu() {
+        let lang = AppLanguage.resolved
         let mainMenu = NSMenu()
+
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Einstellungen …", action: #selector(openSettings), keyEquivalent: ",")
+        appMenu.addItem(withTitle: Loc.t("settings", lang) + " …", action: #selector(openSettings), keyEquivalent: ",")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "AffirmationWallpaper beenden", action: #selector(quitApp), keyEquivalent: "q")
+        appMenu.addItem(withTitle: Loc.t("quit", lang), action: #selector(quitApp), keyEquivalent: "q")
         appItem.submenu = appMenu
+
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: Loc.t("edit", lang))
+        let undo = NSMenuItem(title: Loc.t("undo", lang), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = NSMenuItem(title: Loc.t("redo", lang), action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(undo)
+        editMenu.addItem(redo)
+        editItem.submenu = editMenu
+
         NSApp.mainMenu = mainMenu
     }
 
@@ -637,6 +654,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     }
 
     func settingsDidChange(_ key: String) {
+        if key == "language" {
+            setupMenu()
+            settingsWindow?.title = Loc.t("settings")
+        }
         if key == "frameRate" {
             timer?.invalidate()
             startTimer()
