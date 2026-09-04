@@ -1,30 +1,30 @@
-# AffirmationWallpaper
+# Affirmation Wallpaper
 
-Aurora-Hintergrund für den Mac. Affirmationen und Bilder erscheinen im freien Raum — nicht hinter deinen Fenstern.
+An aurora desktop for the Mac. Affirmations and images appear in empty space — never behind your windows.
 
-## App herunterladen
+## Download
 
-1. **[AffirmationWallpaper.zip](https://github.com/mtsogias/affirmation-wallpaper/releases/latest/download/AffirmationWallpaper.zip)** laden
-2. Zip entpacken
-3. `AffirmationWallpaper.app` in den Ordner **Programme** ziehen
-4. Doppelklick zum Starten
+1. Get **[AffirmationWallpaper.zip](https://github.com/mtsogias/affirmation-wallpaper/releases/latest/download/AffirmationWallpaper.zip)**
+2. Unzip
+3. Drag `AffirmationWallpaper.app` into **Applications**
+4. Double-click to open
 
-Beim ersten Öffnen: Rechtsklick auf die App → **Öffnen** (macOS warnt, weil die App noch nicht von Apple notarisiert ist).
+On first launch: right-click the app → **Open** (macOS warns because the app is not notarized yet).
 
-macOS 14 oder neuer.
+Requires macOS 14 or later.
 
-## Was sie macht
+## What it does
 
-- Animierter Aurora-Desktop, auch mit mehreren Bildschirmen
-- Eigene Affirmationen
-- Bilder aus einem Vision-Board-Ordner
-- Texte und Bilder weichen offenen Fenstern, Menüleiste und Dock aus
-- Einstellungen unter AffirmationWallpaper → Einstellungen (⌘,)
+- Animated aurora desktop, including multiple displays
+- Your own affirmations
+- Images from a vision-board folder
+- Text and images stay out of the way of open windows, the menu bar, and the Dock
+- Settings: Affirmation Wallpaper → Settings (⌘,)
 
-## Aus dem Quellcode bauen
+## Build from source
 
 ```sh
 xcodebuild -scheme AffirmationWallpaper -configuration Release -derivedDataPath build
 ```
 
-Die App liegt dann in `build/Build/Products/Release/AffirmationWallpaper.app`.
+The app is at `build/Build/Products/Release/AffirmationWallpaper.app`.

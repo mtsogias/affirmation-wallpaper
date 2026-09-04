@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- macOS squircle mask: artwork fills the rounded shape, corners transparent -->
+    <path id="squircle" d="M512 32c-66 0-128 5-183 15C255 62 62 255 47 329 37 384 32 446 32 512s5 128 15 183c15 74 208 267 282 282 55 10 117 15 183 15s128-5 183-15c74-15 267-208 282-282 10-55 15-117 15-183s-5-128-15-183C962 255 769 62 695 47 640 37 578 32 512 32Z"/>
+    <clipPath id="clip">
+      <path d="M512 32c-66 0-128 5-183 15C255 62 62 255 47 329 37 384 32 446 32 512s5 128 15 183c15 74 208 267 282 282 55 10 117 15 183 15s128-5 183-15c74-15 267-208 282-282 10-55 15-117 15-183s-5-128-15-183C962 255 769 62 695 47 640 37 578 32 512 32Z"/>
+    </clipPath>
+
+    <!-- Night sky background -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#070B24"/>
+      <stop offset="0.5" stop-color="#121040"/>
+      <stop offset="1" stop-color="#251458"/>
+    </linearGradient>
+
+    <!-- Horizon glow -->
+    <radialGradient id="horizon" cx="0.5" cy="1" r="0.9">
+      <stop offset="0" stop-color="#7C3AED" stop-opacity="0.5"/>
+      <stop offset="0.5" stop-color="#4C1D95" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#4C1D95" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Aurora ribbons -->
+    <linearGradient id="aurora1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#34D399" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#5EEAD4" stop-opacity="0.95"/>
+      <stop offset="0.55" stop-color="#34D399" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="aurora2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#A78BFA" stop-opacity="0"/>
+      <stop offset="0.3" stop-color="#A78BFA" stop-opacity="0.9"/>
+      <stop offset="0.65" stop-color="#818CF8" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#818CF8" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="aurora3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F472B6" stop-opacity="0"/>
+      <stop offset="0.35" stop-color="#F472B6" stop-opacity="0.85"/>
+      <stop offset="0.7" stop-color="#E879F9" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#E879F9" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Soft glow filters -->
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="softWide" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="52"/>
+    </filter>
+
+    <!-- Sparkle -->
+    <path id="spark" d="M0-26 C3-8 8-3 26 0 8 3 3 8 0 26 -3 8 -8 3 -26 0 -8 -3 -3 -8 0 -26Z"/>
+  </defs>
+
+  <!-- Full-bleed square, NO transparency, NO baked corners.
+       macOS applies the squircle mask itself. Baking transparency causes a
+       white ring from double-masking (baked mask + system mask). -->
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <rect width="1024" height="1024" fill="url(#horizon)"/>
+
+    <!-- Stars -->
+    <g fill="#FFFFFF">
+      <circle cx="170" cy="160" r="3.4" opacity="0.8"/>
+      <circle cx="330" cy="110" r="2.4" opacity="0.55"/>
+      <circle cx="710" cy="140" r="2.8" opacity="0.65"/>
+      <circle cx="860" cy="250" r="2.2" opacity="0.5"/>
+      <circle cx="110" cy="410" r="2.4" opacity="0.45"/>
+      <circle cx="910" cy="110" r="3" opacity="0.7"/>
+      <circle cx="560" cy="90" r="2.2" opacity="0.5"/>
+      <circle cx="430" cy="200" r="1.8" opacity="0.4"/>
+      <circle cx="920" cy="430" r="2.6" opacity="0.5"/>
+      <circle cx="230" cy="300" r="2" opacity="0.4"/>
+    </g>
+
+    <!-- Aurora: wide blurred underlay -->
+    <g filter="url(#softWide)">
+      <path d="M-80 640 C160 440 360 720 580 540 780 380 920 580 1120 450 L1120 720 C920 850 740 660 540 820 340 970 120 780 -80 920 Z" fill="url(#aurora2)" opacity="0.6"/>
+    </g>
+    <!-- Aurora: main ribbons -->
+    <g filter="url(#soft)">
+      <path d="M-80 560 C140 400 380 680 600 500 800 340 950 540 1120 420 L1120 580 C940 710 760 540 560 700 360 850 120 680 -80 800 Z" fill="url(#aurora1)" opacity="0.95"/>
+    </g>
+    <g filter="url(#soft)">
+      <path d="M-80 740 C180 600 420 850 640 680 820 540 960 720 1120 610 L1120 800 C940 900 760 760 560 890 360 1010 140 860 -80 960 Z" fill="url(#aurora3)" opacity="0.8"/>
+    </g>
+
+    <!-- Sparkles -->
+    <use href="#spark" transform="translate(768 240) scale(1.7)" fill="#FFFFFF" opacity="0.95"/>
+    <use href="#spark" transform="translate(852 330) scale(0.8)" fill="#FFFFFF" opacity="0.7"/>
+</svg>
