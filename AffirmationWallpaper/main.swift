@@ -181,10 +181,14 @@ class AuroraRenderer {
 // AuroraView: aurora via layer contents (GPU upscales), messages as layers
 // ---------------------------------------------------------------------------
 
+private func cgDisplayID(for screen: NSScreen) -> CGDirectDisplayID {
+    (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+}
+
 class AuroraView: NSView {
 
     private let renderer: AuroraRenderer
-    private let screen: NSScreen
+    let displayID: CGDirectDisplayID
     private var messages: [Message] = []
     private var nextMsgTime: TimeInterval = 0
     private var nextMessageID = 0
@@ -213,9 +217,17 @@ class AuroraView: NSView {
         var done: Bool
     }
 
+    private var screen: NSScreen? {
+        NSScreen.screens.first { cgDisplayID(for: $0) == displayID }
+    }
+
+    var isDisplayOnline: Bool {
+        CGDisplayIsOnline(displayID) != 0
+    }
+
     init(frame frameRect: NSRect, renderer: AuroraRenderer, screen: NSScreen) {
         self.renderer = renderer
-        self.screen = screen
+        self.displayID = cgDisplayID(for: screen)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.contentsGravity = .resize
@@ -252,7 +264,8 @@ class AuroraView: NSView {
 
     /// Visible placement area for this screen, in LOCAL view coordinates
     /// (menubar + dock already excluded via visibleFrame, shifted to origin).
-    private var placementArea: CGRect {
+    private var placementArea: CGRect? {
+        guard let screen else { return nil }
         let v = screen.visibleFrame
         let o = screen.frame.origin
         return CGRect(x: v.minX - o.x, y: v.minY - o.y, width: v.width, height: v.height)
@@ -300,8 +313,9 @@ class AuroraView: NSView {
     /// True if a local candidate rect intersects an occupied window on this
     /// screen. Candidate is converted to global screen coordinates first.
     private func candidateOverlapsWindow(_ candidate: CGRect, occupied: [CGRect]) -> Bool {
+        guard let origin = screen?.frame.origin else { return true }
         let pad: CGFloat = 20
-        let globalCandidate = candidate.offsetBy(dx: screen.frame.origin.x, dy: screen.frame.origin.y)
+        let globalCandidate = candidate.offsetBy(dx: origin.x, dy: origin.y)
         let grown = globalCandidate.insetBy(dx: -pad, dy: -pad)
         return occupied.contains { $0.intersects(grown) }
     }
@@ -314,20 +328,20 @@ class AuroraView: NSView {
     /// No drawRect — the GPU does the upscaling and compositing, so the
     /// per-frame CPU cost stays tiny.
     func update(now: TimeInterval) {
+        guard isDisplayOnline else { return }
         for i in messages.indices {
             updateMessage(&messages[i], now)
         }
         messages.removeAll { $0.done }
 
-        if now >= nextMsgTime && messages.count < maxMessages {
-            let interval = UserDefaults.standard.double(forKey: "messageInterval")
-            if interval > 0 {
-                trySpawnMessage(now)
-                nextMsgTime = now + interval * Double.random(in: 0.7...1.4)
-            } else {
-                // Disabled (0) — check again soon in case it gets enabled.
-                nextMsgTime = now + 5
-            }
+        let affirmationsOn = UserDefaults.standard.bool(forKey: "affirmationsEnabled")
+        if !affirmationsOn {
+            beginMessageFadeOut(now)
+            nextMsgTime = now + 0.5
+        } else if now >= nextMsgTime && messages.count < maxMessages {
+            let interval = max(1, UserDefaults.standard.double(forKey: "messageInterval"))
+            trySpawnMessage(now)
+            nextMsgTime = now + interval * Double.random(in: 0.7...1.4)
         }
 
         updateImage(now)
@@ -342,24 +356,31 @@ class AuroraView: NSView {
 
     /// Spawn + lifecycle for the vision board image (max 1 at a time).
     private func updateImage(_ now: TimeInterval) {
+        let fade = fadeDuration("imageFade")
+        let imagesOn = UserDefaults.standard.bool(forKey: "imagesEnabled")
+
+        if !imagesOn {
+            beginImageFadeOut(now, fade: fade)
+            if imageLayer == nil {
+                imageAlpha = 0
+                nextImageTime = now + 0.5
+                return
+            }
+        }
+
         if imageLayer == nil {
             imageAlpha = 0
-            if now >= nextImageTime {
-                let interval = UserDefaults.standard.double(forKey: "imageInterval")
-                if interval > 0 {
-                    trySpawnImage(now)
-                    nextImageTime = now + interval * Double.random(in: 0.7...1.4)
-                } else {
-                    // Disabled (0) — check again soon in case it gets enabled.
-                    nextImageTime = now + 5
-                }
+            if imagesOn, now >= nextImageTime {
+                let interval = max(1, UserDefaults.standard.double(forKey: "imageInterval"))
+                trySpawnImage(now)
+                nextImageTime = now + interval * Double.random(in: 0.7...1.4)
             }
             return
         }
 
         switch imagePhase {
         case "fadein":
-            imageAlpha = min(1.0, CGFloat((now - imagePhaseStart) / 2.0))
+            imageAlpha = min(1.0, CGFloat((now - imagePhaseStart) / fade))
             if imageAlpha >= 1.0 {
                 imagePhase = "dwell"
                 imagePhaseStart = now
@@ -370,7 +391,7 @@ class AuroraView: NSView {
                 imagePhaseStart = now
             }
         case "fadeout":
-            imageAlpha = max(0.0, 1.0 - CGFloat((now - imagePhaseStart) / 3.0))
+            imageAlpha = max(0.0, 1.0 - CGFloat((now - imagePhaseStart) / fade))
             if imageAlpha <= 0.0 {
                 imageLayer?.removeFromSuperlayer()
                 imageLayer = nil
@@ -378,6 +399,24 @@ class AuroraView: NSView {
         default:
             break
         }
+    }
+
+    private func fadeDuration(_ key: String) -> TimeInterval {
+        max(0.3, UserDefaults.standard.double(forKey: key))
+    }
+
+    private func beginMessageFadeOut(_ now: TimeInterval) {
+        let fade = fadeDuration("messageFade")
+        for i in messages.indices where messages[i].phase != "fadeout" {
+            messages[i].phase = "fadeout"
+            messages[i].phaseStart = now - Double(1.0 - messages[i].alpha) * fade
+        }
+    }
+
+    private func beginImageFadeOut(_ now: TimeInterval, fade: TimeInterval) {
+        guard imageLayer != nil, imagePhase != "fadeout" else { return }
+        imagePhase = "fadeout"
+        imagePhaseStart = now - Double(1.0 - imageAlpha) * fade
     }
 
     private func trySpawnImage(_ now: TimeInterval) {
@@ -399,7 +438,7 @@ class AuroraView: NSView {
         let w = rect.width * scale
         let h = rect.height * scale
 
-        let area = placementArea
+        guard let area = placementArea else { return }
         let occupied = occupiedRects()
 
         // Random position that doesn't overlap active affirmation messages
@@ -479,7 +518,7 @@ class AuroraView: NSView {
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
         let textSize = (text as NSString).size(withAttributes: attrs)
 
-        let area = placementArea
+        guard let area = placementArea else { return }
         let occupied = occupiedRects()
 
         for _ in 0..<25 {
@@ -504,9 +543,10 @@ class AuroraView: NSView {
     }
 
     private func updateMessage(_ m: inout Message, _ t: TimeInterval) {
+        let fade = fadeDuration("messageFade")
         switch m.phase {
         case "fadein":
-            m.alpha = min(1.0, CGFloat((t - m.phaseStart) / 2.0))
+            m.alpha = min(1.0, CGFloat((t - m.phaseStart) / fade))
             if m.alpha >= 1.0 {
                 m.phase = "dwell"
                 m.phaseStart = t
@@ -517,7 +557,7 @@ class AuroraView: NSView {
                 m.phaseStart = t
             }
         case "fadeout":
-            m.alpha = max(0.0, 1.0 - CGFloat((t - m.phaseStart) / 3.0))
+            m.alpha = max(0.0, 1.0 - CGFloat((t - m.phaseStart) / fade))
             if m.alpha <= 0.0 {
                 m.done = true
             }
@@ -528,7 +568,8 @@ class AuroraView: NSView {
 }
 
 // ---------------------------------------------------------------------------
-// AppDelegate: one desktop window per screen + wallpaper sync
+// AppDelegate: live overlay on the main display (menu bar screen);
+// other displays get the aurora still as the real wallpaper only.
 // ---------------------------------------------------------------------------
 
 @MainActor
@@ -541,13 +582,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     /// Original wallpaper per screen name, restored on quit.
     private var oldWallpapers: [String: URL] = [:]
     private var wallpaperRetries = 0
+    private var wallpaperToken: UInt64 = 0
+    private var wallpaperBurstID: UInt64 = 0
+    /// Don’t delete stills while WallpaperAgent is still catching up after a
+    /// display plug/unplug — that leaves a white menu bar.
+    private var suppressPruneUntil: TimeInterval = 0
+    /// Skip ticks while macOS is rearranging displays — accessing a dead
+    /// NSScreen or closing its window mid-reconfigure crashes the process.
+    private var screensSettling = false
+    private var rebuildingWindows = false
+    /// Windows for unplugged displays. Held briefly so AppKit doesn't
+    /// deallocate them in the middle of the screen reconfigure.
+    private var retiringWindows: [NSWindow] = []
+
+    /// Older builds used interval 0 as “off”. Turn that into the new toggles
+    /// and restore a usable interval so the sliders stay meaningful.
+    private func migrateLegacyOffIntervals() {
+        let d = UserDefaults.standard
+        if d.object(forKey: "affirmationsEnabled") == nil, d.double(forKey: "messageInterval") <= 0 {
+            d.set(false, forKey: "affirmationsEnabled")
+            d.set(9.0, forKey: "messageInterval")
+        }
+        if d.object(forKey: "imagesEnabled") == nil, d.double(forKey: "imageInterval") <= 0 {
+            d.set(false, forKey: "imagesEnabled")
+            d.set(20.0, forKey: "imageInterval")
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        migrateLegacyOffIntervals()
         UserDefaults.standard.register(defaults: [
             "auroraSpeed": 1.0,
             "frameRate": 30.0,
             "messageInterval": 9.0,
+            "messageFade": 2.0,
             "imageInterval": 20.0,
+            "imageFade": 2.0,
+            "affirmationsEnabled": true,
+            "imagesEnabled": true,
             "imageFolder": "",
             "brightness": 1.0,
             "hueShift": 0.0,
@@ -559,11 +631,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         if let icon = NSImage(named: "AppIconRounded") {
             NSApp.applicationIconImage = icon
         }
-        clearStaleWallpapers()
+        recoverCrashedSessionIfNeeded()
         setupMenu()
-        createWindows()
+        // Wallpaper first so the menu bar can sample a real aurora still
+        // instead of a missing/white desktop picture.
         syncWallpaper()
+        rebuildWindows()
         startTimer()
+        // WallpaperAgent often ignores the first set; a unique file + a
+        // second pass makes the menu bar tint show up without a Space swipe.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.applyWallpapers()
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -599,8 +678,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     }
 
     @objc private func screensChanged() {
-        createWindows()
-        syncWallpaper()
+        screensSettling = true
+        suppressPruneUntil = Date().timeIntervalSince1970 + 6
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(applyScreenChange), object: nil)
+        perform(#selector(applyScreenChange), with: nil, afterDelay: 0.45)
+    }
+
+    @objc private func applyScreenChange() {
+        rebuildWindows()
+        screensSettling = false
+        // WallpaperAgent resets the desktop picture after a cable pull and
+        // often ignores the first setDesktopImageURL. Keep applying a fresh
+        // file until the menu bar samples it — a Space swipe should not be
+        // required.
+        resyncWallpaperAfterDisplayChange()
+    }
+
+    private func resyncWallpaperAfterDisplayChange() {
+        wallpaperBurstID += 1
+        let id = wallpaperBurstID
+        suppressPruneUntil = Date().timeIntervalSince1970 + 6
+        wallpaperRetries = 0
+        let delays: [TimeInterval] = [0.0, 0.35, 0.8, 1.6, 2.8, 4.5]
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.wallpaperBurstID == id else { return }
+                self.applyWallpapers()
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -685,42 +790,76 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         syncWallpaper()
     }
 
-    private func createWindows() {
-        for window in windows {
-            window.orderOut(nil)
-            window.close()
+    private func rebuildWindows() {
+        // screens[0] is the display that has the menu bar — the main display
+        // in System Settings. NSScreen.main follows keyboard focus instead.
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return }
+        let primaryID = cgDisplayID(for: primary)
+        guard primaryID != 0 else { return }
+
+        rebuildingWindows = true
+        defer { rebuildingWindows = false }
+
+        var byID: [CGDirectDisplayID: (NSWindow, AuroraView)] = [:]
+        for (window, view) in zip(windows, views) {
+            byID[view.displayID] = (window, view)
         }
-        windows.removeAll()
-        views.removeAll()
 
-        for screen in NSScreen.screens {
-            let frame = screen.frame
+        var newWindows: [NSWindow] = []
+        var newViews: [AuroraView] = []
 
-            let window = NSWindow(
-                contentRect: frame,
-                styleMask: .borderless,
-                backing: .buffered,
-                defer: false,
-                screen: screen
-            )
-            window.level = .init(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
-            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-            window.ignoresMouseEvents = true
-            window.isOpaque = true
-            window.backgroundColor = NSColor.black
-            window.hasShadow = false
-
-            let view = AuroraView(
-                frame: NSRect(origin: .zero, size: frame.size),
-                renderer: renderer,
-                screen: screen
-            )
-            window.contentView = view
+        if let (window, view) = byID.removeValue(forKey: primaryID) {
+            window.setFrame(primary.frame, display: false)
+            view.frame = NSRect(origin: .zero, size: primary.frame.size)
             window.orderFrontRegardless()
-
-            windows.append(window)
-            views.append(view)
+            newWindows.append(window)
+            newViews.append(view)
+        } else {
+            let (window, view) = makeDesktopWindow(on: primary)
+            newWindows.append(window)
+            newViews.append(view)
         }
+
+        // Other displays: wallpaper still only. Retire leftover live windows
+        // without close() — AppKit crashes if that screen is already gone.
+        for (window, _) in byID.values {
+            window.contentView = nil
+            retiringWindows.append(window)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.retiringWindows.removeAll()
+        }
+
+        windows = newWindows
+        views = newViews
+    }
+
+    private func makeDesktopWindow(on screen: NSScreen) -> (NSWindow, AuroraView) {
+        let frame = screen.frame
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false,
+            screen: screen
+        )
+        window.isReleasedWhenClosed = false
+        window.level = .init(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        window.ignoresMouseEvents = true
+        window.isOpaque = true
+        window.backgroundColor = NSColor.black
+        window.hasShadow = false
+
+        let view = AuroraView(
+            frame: NSRect(origin: .zero, size: frame.size),
+            renderer: renderer,
+            screen: screen
+        )
+        window.contentView = view
+        window.orderFrontRegardless()
+        return (window, view)
     }
 
     private func startTimer() {
@@ -733,19 +872,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     }
 
     @objc private func tick() {
+        guard !screensSettling, !rebuildingWindows else { return }
         let now = Date().timeIntervalSince1970
         let dt = min(now - lastFrame, 0.1)
         lastFrame = now
 
         var maxSize = NSSize.zero
+        for view in views where view.isDisplayOnline {
+            maxSize.width = max(maxSize.width, view.bounds.width)
+            maxSize.height = max(maxSize.height, view.bounds.height)
+        }
         for screen in NSScreen.screens {
             maxSize.width = max(maxSize.width, screen.frame.width)
             maxSize.height = max(maxSize.height, screen.frame.height)
         }
+        guard maxSize.width > 0, maxSize.height > 0 else { return }
 
         let speed = CGFloat(max(0.05, UserDefaults.standard.double(forKey: "auroraSpeed")))
         renderer.tick(dt: dt, maxScreenSize: maxSize, speed: speed)
-        for view in views {
+        for view in views where view.isDisplayOnline {
             view.update(now: now)
         }
     }
@@ -755,24 +900,62 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     // so Mission Control previews and the lock screen show the aurora too.
     // -----------------------------------------------------------------------
 
+    private func recoverCrashedSessionIfNeeded() {
+        loadPersistedOriginals()
+        let dirty = UserDefaults.standard.bool(forKey: "sessionActive")
+        let wallpaperMissing = NSScreen.screens.contains { screen in
+            guard let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return false }
+            return isAuroraWallpaper(url) && !FileManager.default.fileExists(atPath: url.path)
+        }
+        UserDefaults.standard.set(true, forKey: "sessionActive")
+        UserDefaults.standard.synchronize()
+        if dirty || wallpaperMissing {
+            restoreWallpapers()
+        }
+    }
+
+    private func loadPersistedOriginals() {
+        let prefix = "originalWallpaper-"
+        for (key, value) in UserDefaults.standard.dictionaryRepresentation() {
+            guard key.hasPrefix(prefix), let path = value as? String, !path.isEmpty else { continue }
+            guard !isAuroraWallpaper(URL(fileURLWithPath: path)) else { continue }
+            let name = String(key.dropFirst(prefix.count))
+            if oldWallpapers[name] == nil {
+                oldWallpapers[name] = URL(fileURLWithPath: path)
+            }
+        }
+    }
+
+    private func isAuroraWallpaper(_ url: URL) -> Bool {
+        url.path.contains("/AffirmationWallpaper/wallpaper-")
+            || url.path.contains("/Meanwhile/wallpaper-")
+    }
+
     private func syncWallpaper() {
         wallpaperRetries = 0
         applyWallpapers()
     }
 
-    /// Deletes leftover aurora stills from previous sessions (crash leftovers).
-    /// Filenames contain a random per-launch hash, so they'd never be
-    /// overwritten and would slowly accumulate.
-    private func clearStaleWallpapers() {
+    /// Deletes leftover aurora stills that are not the current desktop picture.
+    /// Never remove a file macOS is still pointing at — that leaves a white
+    /// menu bar until the next Space switch.
+    private func pruneUnusedWallpaperFiles(keeping keep: Set<URL>) {
+        let inUse = Set(NSScreen.screens.compactMap { NSWorkspace.shared.desktopImageURL(for: $0) })
+        let keepPaths = Set((keep.union(inUse)).map(\.path))
         for dir in [Self.wallpaperDirectory, Self.legacyWallpaperDirectory] {
-            guard let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { continue }
-            for file in files where file.hasPrefix("wallpaper-") {
-                try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil
+            ) else { continue }
+            for file in files where file.lastPathComponent.hasPrefix("wallpaper-") {
+                if keepPaths.contains(file.path) { continue }
+                try? FileManager.default.removeItem(at: file)
             }
         }
     }
 
     private func applyWallpapers() {
+        var written: Set<URL> = []
         for screen in NSScreen.screens {
             let key = screen.localizedName
             let defaultsKey = "originalWallpaper-\(key)"
@@ -780,14 +963,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
                 // Never capture one of our own aurora stills as "original"
                 // (can happen after an unclean quit) — that would poison the restore.
                 if let current = NSWorkspace.shared.desktopImageURL(for: screen),
-                   !current.path.contains("/Meanwhile/wallpaper-"),
-                   !current.path.contains("/AffirmationWallpaper/wallpaper-") {
+                   !isAuroraWallpaper(current) {
                     oldWallpapers[key] = current
-                    // Persist so the original survives a crash (memory-only
-                    // storage would lose it and restore would fall back to
-                    // the generic default wallpaper).
                     UserDefaults.standard.set(current.path, forKey: defaultsKey)
-                } else if let saved = UserDefaults.standard.string(forKey: defaultsKey) {
+                } else if let saved = UserDefaults.standard.string(forKey: defaultsKey),
+                          !isAuroraWallpaper(URL(fileURLWithPath: saved)) {
                     oldWallpapers[key] = URL(fileURLWithPath: saved)
                 }
             }
@@ -797,32 +977,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
             let w = max(10, Int(screen.frame.width * scale) / 4)
             let h = max(10, Int(screen.frame.height * scale) / 4)
 
+            wallpaperToken += 1
+            let display = cgDisplayID(for: screen)
             guard let image = renderer.renderImage(width: w, height: h),
-                  let url = savePNG(image, name: "wallpaper-\(key.hashValue)") else { continue }
+                  let url = savePNG(image, name: "wallpaper-\(display)-\(wallpaperToken)") else { continue }
+            written.insert(url)
             do {
-                try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
+                try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [
+                    .fillColor: NSColor.black
+                ])
             } catch {
                 NSLog("AffirmationWallpaper: wallpaper sync failed for %@: %@", key, error.localizedDescription)
             }
         }
 
+        if Date().timeIntervalSince1970 >= suppressPruneUntil {
+            pruneUnusedWallpaperFiles(keeping: written)
+        }
+
         // WallpaperAgent sometimes silently drops a screen — verify and retry.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.verifyWallpapers()
         }
     }
 
     private func verifyWallpapers() {
-        guard wallpaperRetries < 3 else { return }
+        guard wallpaperRetries < 5 else { return }
         wallpaperRetries += 1
 
         var missing = false
         for screen in NSScreen.screens {
-            let key = screen.localizedName
-            let expected = "wallpaper-\(key.hashValue).png"
-            if NSWorkspace.shared.desktopImageURL(for: screen)?.lastPathComponent != expected {
-                NSLog("AffirmationWallpaper: wallpaper did not stick for %@, retry %d", key, wallpaperRetries)
+            guard let url = NSWorkspace.shared.desktopImageURL(for: screen),
+                  isAuroraWallpaper(url),
+                  FileManager.default.fileExists(atPath: url.path) else {
+                NSLog("AffirmationWallpaper: wallpaper did not stick for %@, retry %d", screen.localizedName, wallpaperRetries)
                 missing = true
+                continue
             }
         }
         if missing {
@@ -836,7 +1026,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         let url = dir.appendingPathComponent(name + ".png")
         let rep = NSBitmapImageRep(cgImage: image)
         guard let data = rep.representation(using: .png, properties: [:]) else { return nil }
-        try? data.write(to: url)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            NSLog("AffirmationWallpaper: wallpaper write failed: %@", error.localizedDescription)
+            return nil
+        }
         return url
     }
 
@@ -870,6 +1065,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         spinRunLoop(0.5)
         restoreWallpapers()
         spinRunLoop(0.7)
+
+        UserDefaults.standard.set(false, forKey: "sessionActive")
+        UserDefaults.standard.synchronize()
 
         // Delete our aurora stills: spaces that were synced but could not be
         // restored then fall back to the system default instead of keeping a

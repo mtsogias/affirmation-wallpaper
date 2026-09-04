@@ -28,7 +28,11 @@ final class SettingsStore: ObservableObject {
     @Published var auroraSpeed: Double
     @Published var frameRate: Double
     @Published var messageInterval: Double
+    @Published var messageFade: Double
     @Published var imageInterval: Double
+    @Published var imageFade: Double
+    @Published var affirmationsEnabled: Bool
+    @Published var imagesEnabled: Bool
     @Published var imageFolder: String
     @Published var excludedFolders: [String]
     @Published var rows: [AffRow]
@@ -45,7 +49,11 @@ final class SettingsStore: ObservableObject {
         auroraSpeed = d.object(forKey: "auroraSpeed") as? Double ?? 1.0
         frameRate = d.object(forKey: "frameRate") as? Double ?? 30
         messageInterval = d.object(forKey: "messageInterval") as? Double ?? 9
+        messageFade = d.object(forKey: "messageFade") as? Double ?? 2
         imageInterval = d.object(forKey: "imageInterval") as? Double ?? 20
+        imageFade = d.object(forKey: "imageFade") as? Double ?? 2
+        affirmationsEnabled = d.bool(forKey: "affirmationsEnabled")
+        imagesEnabled = d.bool(forKey: "imagesEnabled")
         imageFolder = d.string(forKey: "imageFolder") ?? ""
         excludedFolders = d.stringArray(forKey: "excludedFolders") ?? []
         let texts = d.stringArray(forKey: "affirmations") ?? defaultAffirmations
@@ -97,7 +105,9 @@ final class SettingsStore: ObservableObject {
         case "auroraSpeed": return auroraSpeed
         case "frameRate": return frameRate
         case "messageInterval": return messageInterval
+        case "messageFade": return messageFade
         case "imageInterval": return imageInterval
+        case "imageFade": return imageFade
         default: return 0
         }
     }
@@ -109,7 +119,37 @@ final class SettingsStore: ObservableObject {
         case "auroraSpeed": auroraSpeed = value
         case "frameRate": frameRate = value
         case "messageInterval": messageInterval = value
+        case "messageFade": messageFade = value
         case "imageInterval": imageInterval = value
+        case "imageFade": imageFade = value
+        default: break
+        }
+    }
+
+    func setFlag(_ key: String, _ on: Bool) {
+        let current = flagValue(key)
+        guard current != on else { return }
+        undoManager?.registerUndo(withTarget: self) { store in
+            MainActor.assumeIsolated { store.setFlag(key, current) }
+        }
+        undoManager?.setActionName(t("undoToggle"))
+        assignFlag(key, on)
+        UserDefaults.standard.set(on, forKey: key)
+        host?.settingsDidChange(key)
+    }
+
+    private func flagValue(_ key: String) -> Bool {
+        switch key {
+        case "affirmationsEnabled": return affirmationsEnabled
+        case "imagesEnabled": return imagesEnabled
+        default: return false
+        }
+    }
+
+    private func assignFlag(_ key: String, _ on: Bool) {
+        switch key {
+        case "affirmationsEnabled": affirmationsEnabled = on
+        case "imagesEnabled": imagesEnabled = on
         default: break
         }
     }
@@ -512,14 +552,37 @@ private struct AffirmationsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SettingSlider(
-                title: store.t("messageInterval"),
-                key: "messageInterval",
-                store: store,
-                value: $store.messageInterval,
-                range: 0...60,
-                display: store.messageInterval == 0 ? store.t("off") : "\(Int(store.messageInterval)) s"
-            )
+            SettingsCard {
+                VStack(spacing: 16) {
+                    FeatureToggle(
+                        store: store,
+                        key: "affirmationsEnabled",
+                        titleKey: "affirmationsEnabled",
+                        hintKey: "affirmationsEnabledHint",
+                        isOn: $store.affirmationsEnabled
+                    )
+
+                    SettingSlider(
+                        title: store.t("messageInterval"),
+                        key: "messageInterval",
+                        store: store,
+                        value: $store.messageInterval,
+                        range: 1...60,
+                        display: "\(Int(store.messageInterval)) s"
+                    )
+                    .disabled(!store.affirmationsEnabled)
+
+                    SettingSlider(
+                        title: store.t("fadeDuration"),
+                        key: "messageFade",
+                        store: store,
+                        value: $store.messageFade,
+                        range: 0.5...5,
+                        display: String(format: "%.1f s", store.messageFade)
+                    )
+                    .disabled(!store.affirmationsEnabled)
+                }
+            }
 
             Text(store.t("yourSentences"))
                 .font(.system(size: 13, weight: .semibold))
@@ -597,14 +660,37 @@ private struct ImagesTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SettingSlider(
-                title: store.t("imageInterval"),
-                key: "imageInterval",
-                store: store,
-                value: $store.imageInterval,
-                range: 0...60,
-                display: store.imageInterval == 0 ? store.t("off") : "\(Int(store.imageInterval)) s"
-            )
+            SettingsCard {
+                VStack(spacing: 16) {
+                    FeatureToggle(
+                        store: store,
+                        key: "imagesEnabled",
+                        titleKey: "imagesEnabled",
+                        hintKey: "imagesEnabledHint",
+                        isOn: $store.imagesEnabled
+                    )
+
+                    SettingSlider(
+                        title: store.t("imageInterval"),
+                        key: "imageInterval",
+                        store: store,
+                        value: $store.imageInterval,
+                        range: 1...60,
+                        display: "\(Int(store.imageInterval)) s"
+                    )
+                    .disabled(!store.imagesEnabled)
+
+                    SettingSlider(
+                        title: store.t("fadeDuration"),
+                        key: "imageFade",
+                        store: store,
+                        value: $store.imageFade,
+                        range: 0.5...5,
+                        display: String(format: "%.1f s", store.imageFade)
+                    )
+                    .disabled(!store.imagesEnabled)
+                }
+            }
 
             Text(store.t("visionBoard"))
                 .font(.system(size: 13, weight: .semibold))
@@ -724,6 +810,33 @@ private struct ClickSurface: NSViewRepresentable {
         override func mouseDown(with event: NSEvent) {
             action()
         }
+    }
+}
+
+private struct FeatureToggle: View {
+    @ObservedObject var store: SettingsStore
+    let key: String
+    let titleKey: String
+    let hintKey: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: Binding(
+            get: { isOn },
+            set: { store.setFlag(key, $0) }
+        )) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.t(titleKey))
+                    .font(.system(size: 13, weight: .medium))
+                Text(store.t(hintKey))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .toggleStyle(.switch)
     }
 }
 
