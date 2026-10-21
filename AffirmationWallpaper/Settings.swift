@@ -930,9 +930,22 @@ private struct AuroraPreview: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            if let window {
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(updateTimer),
+                    name: NSWindow.didChangeOcclusionStateNotification, object: window
+                )
+            }
+            updateTimer()
+        }
+
+        /// Run only while the settings window is actually visible — closing
+        /// it just hides it, so the view never leaves its window.
+        @objc private func updateTimer() {
             timer?.invalidate()
             timer = nil
-            guard window != nil else { return }
+            guard let window, window.occlusionState.contains(.visible) else { return }
             let timer = Timer(timeInterval: 1.0 / 20.0, repeats: true) { [weak self] _ in
                 DispatchQueue.main.async { self?.refresh() }
             }

@@ -104,7 +104,10 @@ class AuroraRenderer {
     /// Advance wave phases and render the shared frame, sized for the largest screen.
     func tick(dt: TimeInterval, maxScreenSize: NSSize, speed: CGFloat) {
         for i in waves.indices {
-            waves[i].ph += waves[i].sp * speed * dt
+            // Wrap: sin is 2π-periodic, and an ever-growing phase loses Float
+            // precision after days of uptime (the aurora starts to stutter).
+            waves[i].ph = (waves[i].ph + waves[i].sp * speed * dt)
+                .truncatingRemainder(dividingBy: 2 * .pi)
             fwaves[i].ph = Float(waves[i].ph)
         }
         let scale: Int = 16
@@ -126,6 +129,7 @@ class AuroraRenderer {
 
         var count = Int32(lw)
         let invN = 1.0 / Float(waves.count)
+        let brightness = Float(max(0.05, UserDefaults.standard.double(forKey: "brightness")))
 
         for y in 0..<lh {
             let yf = Float(y)
@@ -148,7 +152,6 @@ class AuroraRenderer {
                 }
             }
             // Map to color LUT and write the row.
-            let brightness = Float(max(0.05, UserDefaults.standard.double(forKey: "brightness")))
             let rowBase = y * lw * 4
             for x in 0..<lw {
                 let v = (value[x] * invN + 1) * 0.5
@@ -425,15 +428,24 @@ class AuroraView: NSView {
         if candidates.count > 1, let last = lastImageURL {
             candidates = candidates.filter { $0 != last }
         }
-        guard let url = candidates.randomElement(),
-              let nsImage = NSImage(contentsOf: url) else { return }
+        guard let url = candidates.randomElement() else { return }
         lastImageURL = url
-        var rect = CGRect(origin: .zero, size: nsImage.size)
-        guard let cgImage = nsImage.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return }
 
         // Scale to at most 25% of the screen, keeping aspect ratio.
         let maxW = bounds.width * 0.25
         let maxH = bounds.height * 0.25
+
+        // Decode straight to display size instead of the full-resolution
+        // photo — far less CPU and memory per spawn.
+        let backing = window?.backingScaleFactor ?? 2
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(max(maxW, maxH) * backing),
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return }
+        let rect = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
         let scale = min(maxW / rect.width, maxH / rect.height)
         let w = rect.width * scale
         let h = rect.height * scale
@@ -443,7 +455,7 @@ class AuroraView: NSView {
 
         // Random position that doesn't overlap active affirmation messages
         // or on-screen windows.
-        var frame = CGRect.zero
+        var found: CGRect?
         for _ in 0..<25 {
             let x = CGFloat.random(in: area.minX...max(area.minX, area.maxX - w - 20))
             let y = CGFloat.random(in: area.minY...max(area.minY, area.maxY - h - 20))
@@ -452,11 +464,13 @@ class AuroraView: NSView {
                 let pad: CGFloat = 30
                 return candidate.insetBy(dx: -pad, dy: -pad).intersects(existing.bbox.insetBy(dx: -pad, dy: -pad))
             }
-            frame = candidate
             if overlapsMsg { continue }
             if candidateOverlapsWindow(candidate, occupied: occupied) { continue }
+            found = candidate
             break
         }
+        // No free spot: skip this round instead of covering a window.
+        guard let frame = found else { return }
 
         let imgLayer = CALayer()
         imgLayer.frame = frame
@@ -512,7 +526,8 @@ class AuroraView: NSView {
 
     private func trySpawnMessage(_ now: TimeInterval) {
         // Read fresh every spawn so settings edits apply without a restart.
-        let affirmations = UserDefaults.standard.stringArray(forKey: "affirmations") ?? []
+        let affirmations = (UserDefaults.standard.stringArray(forKey: "affirmations") ?? [])
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard let text = affirmations.randomElement() else { return }
         let font = NSFont.systemFont(ofSize: 18, weight: .medium)
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
@@ -582,11 +597,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     /// Original wallpaper per screen name, restored on quit.
     private var oldWallpapers: [String: URL] = [:]
     private var wallpaperRetries = 0
-    private var wallpaperToken: UInt64 = 0
     private var wallpaperBurstID: UInt64 = 0
-    /// Don’t delete stills while WallpaperAgent is still catching up after a
-    /// display plug/unplug — that leaves a white menu bar.
-    private var suppressPruneUntil: TimeInterval = 0
+    /// Set once quitting starts, so queued syncs can’t re-apply the aurora
+    /// after the original wallpaper was restored.
+    private var terminating = false
     /// Skip ticks while macOS is rearranging displays — accessing a dead
     /// NSScreen or closing its window mid-reconfigure crashes the process.
     private var screensSettling = false
@@ -598,18 +612,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     /// Older builds used interval 0 as “off”. Turn that into the new toggles
     /// and restore a usable interval so the sliders stay meaningful.
     private func migrateLegacyOffIntervals() {
+        // Only a *stored* 0 means “off” — on a fresh install nothing is stored
+        // yet, and the features must stay on.
         let d = UserDefaults.standard
-        if d.object(forKey: "affirmationsEnabled") == nil, d.double(forKey: "messageInterval") <= 0 {
+        if d.object(forKey: "affirmationsEnabled") == nil,
+           let interval = d.object(forKey: "messageInterval") as? Double, interval <= 0 {
             d.set(false, forKey: "affirmationsEnabled")
             d.set(9.0, forKey: "messageInterval")
         }
-        if d.object(forKey: "imagesEnabled") == nil, d.double(forKey: "imageInterval") <= 0 {
+        if d.object(forKey: "imagesEnabled") == nil,
+           let interval = d.object(forKey: "imageInterval") as? Double, interval <= 0 {
             d.set(false, forKey: "imagesEnabled")
             d.set(20.0, forKey: "imageInterval")
         }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A second copy would fight the first over the wallpaper. exit() skips
+        // the quit-time restore, so the running copy is left untouched.
+        let copies = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+        if copies.contains(where: { $0 != NSRunningApplication.current }) {
+            exit(0)
+        }
         migrateLegacyOffIntervals()
         UserDefaults.standard.register(defaults: [
             "auroraSpeed": 1.0,
@@ -641,7 +665,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         // WallpaperAgent often ignores the first set; a unique file + a
         // second pass makes the menu bar tint show up without a Space swipe.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.applyWallpapers()
+            self?.applyWallpapers(force: true)
         }
 
         NotificationCenter.default.addObserver(
@@ -660,13 +684,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
             object: nil
         )
 
+        // Esc closes Settings. It never quits the app (that is ⌘Q) — otherwise
+        // Esc in a folder picker would tear down the wallpaper.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // Esc
-                if let settings = self?.settingsWindow, settings.isVisible, settings.isKeyWindow {
-                    settings.orderOut(nil)
-                    return nil
-                }
-                NSApp.terminate(nil)
+            if event.keyCode == 53, // Esc
+               let settings = self?.settingsWindow, settings.isVisible, settings.isKeyWindow {
+                settings.orderOut(nil)
+                return nil
             }
             return event
         }
@@ -679,7 +703,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
 
     @objc private func screensChanged() {
         screensSettling = true
-        suppressPruneUntil = Date().timeIntervalSince1970 + 6
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(applyScreenChange), object: nil)
         perform(#selector(applyScreenChange), with: nil, afterDelay: 0.45)
     }
@@ -697,13 +720,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     private func resyncWallpaperAfterDisplayChange() {
         wallpaperBurstID += 1
         let id = wallpaperBurstID
-        suppressPruneUntil = Date().timeIntervalSince1970 + 6
         wallpaperRetries = 0
         let delays: [TimeInterval] = [0.0, 0.35, 0.8, 1.6, 2.8, 4.5]
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.wallpaperBurstID == id else { return }
-                self.applyWallpapers()
+                self.applyWallpapers(force: true)
             }
         }
     }
@@ -735,6 +757,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(undo)
         editMenu.addItem(redo)
+        // Without these items ⌘X/⌘C/⌘V/⌘A do nothing in the settings text fields.
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: Loc.t("cut", lang), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: Loc.t("copy", lang), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: Loc.t("paste", lang), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: Loc.t("selectAll", lang), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = editMenu
 
         NSApp.mainMenu = mainMenu
@@ -782,8 +810,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         }
     }
 
+    /// Color/brightness changed: the stills must be re-rendered even if the
+    /// Space already shows one of ours.
     @objc private func syncWallpaperDebounced() {
-        syncWallpaper()
+        wallpaperRetries = 0
+        applyWallpapers(force: true)
     }
 
     @objc private func spaceChanged() {
@@ -824,6 +855,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         // Other displays: wallpaper still only. Retire leftover live windows
         // without close() — AppKit crashes if that screen is already gone.
         for (window, _) in byID.values {
+            // orderOut first: an ordered-in window would stay on that display
+            // as an opaque black rectangle until quit.
+            window.orderOut(nil)
             window.contentView = nil
             retiringWindows.append(window)
         }
@@ -867,8 +901,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         // ~30 fps default (adjustable in settings): the aurora frame is cheap,
         // the GPU does the upscaling — smooth animation, low CPU.
         let fps = max(5, UserDefaults.standard.double(forKey: "frameRate"))
-        timer = Timer.scheduledTimer(timeInterval: 1.0 / fps, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
-        RunLoop.main.add(timer!, forMode: .common)
+        let timer = Timer.scheduledTimer(timeInterval: 1.0 / fps, target: self, selector: #selector(tick), userInfo: nil, repeats: true)
+        // Generous slack lets macOS batch our wakeups with other work;
+        // motion stays correct because each tick uses the real elapsed time.
+        timer.tolerance = 0.25 / fps
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     @objc private func tick() {
@@ -876,6 +914,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         let now = Date().timeIntervalSince1970
         let dt = min(now - lastFrame, 0.1)
         lastFrame = now
+
+        // Nothing to draw while the overlay is covered, the screen is locked
+        // or the display sleeps — save the energy.
+        if let window = windows.first, !window.occlusionState.contains(.visible) { return }
 
         var maxSize = NSSize.zero
         for view in views where view.isDisplayOnline {
@@ -912,6 +954,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         if dirty || wallpaperMissing {
             restoreWallpapers()
         }
+        // The persisted originals were only needed for that restore. Forget
+        // them so the first sync captures what the desktop shows *now* — the
+        // user may have picked a new wallpaper while the app was not running.
+        // (A screen still showing an aurora falls back to the saved value.)
+        oldWallpapers.removeAll()
     }
 
     private func loadPersistedOriginals() {
@@ -936,26 +983,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
         applyWallpapers()
     }
 
-    /// Deletes leftover aurora stills that are not the current desktop picture.
-    /// Never remove a file macOS is still pointing at — that leaves a white
-    /// menu bar until the next Space switch.
-    private func pruneUnusedWallpaperFiles(keeping keep: Set<URL>) {
-        let inUse = Set(NSScreen.screens.compactMap { NSWorkspace.shared.desktopImageURL(for: $0) })
-        let keepPaths = Set((keep.union(inUse)).map(\.path))
-        for dir in [Self.wallpaperDirectory, Self.legacyWallpaperDirectory] {
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: nil
-            ) else { continue }
-            for file in files where file.lastPathComponent.hasPrefix("wallpaper-") {
-                if keepPaths.contains(file.path) { continue }
-                try? FileManager.default.removeItem(at: file)
-            }
-        }
-    }
-
-    private func applyWallpapers() {
-        var written: Set<URL> = []
+    /// Each display alternates between two fixed stills, a and b. Writing the
+    /// slot that is NOT shown gives WallpaperAgent a new URL (it ignores a
+    /// re-set of the same URL), and because nothing is deleted while running,
+    /// every still that other Spaces or the lock screen point at keeps
+    /// existing. Deleting them made the lock screen fall back to the macOS
+    /// default picture.
+    ///
+    /// Without `force`, a screen whose Space already shows one of our stills
+    /// is left alone, so a Space switch costs nothing.
+    private func applyWallpapers(force: Bool = false) {
+        guard !terminating else { return }
         for screen in NSScreen.screens {
             let key = screen.localizedName
             let defaultsKey = "originalWallpaper-\(key)"
@@ -972,16 +1010,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
                 }
             }
 
+            let display = cgDisplayID(for: screen)
+            let slots = ["a", "b"].map {
+                Self.wallpaperDirectory.appendingPathComponent("wallpaper-\(display)-\($0).png")
+            }
+            let shown = NSWorkspace.shared.desktopImageURL(for: screen)
+            let shownSlot = slots.firstIndex { $0.path == shown?.path }
+            if !force, let shownSlot, FileManager.default.fileExists(atPath: slots[shownSlot].path) {
+                continue
+            }
+            let url = slots[shownSlot == 0 ? 1 : 0]
+
             // Quarter resolution is plenty for a smooth gradient field.
             let scale = screen.backingScaleFactor
             let w = max(10, Int(screen.frame.width * scale) / 4)
             let h = max(10, Int(screen.frame.height * scale) / 4)
 
-            wallpaperToken += 1
-            let display = cgDisplayID(for: screen)
             guard let image = renderer.renderImage(width: w, height: h),
-                  let url = savePNG(image, name: "wallpaper-\(display)-\(wallpaperToken)") else { continue }
-            written.insert(url)
+                  savePNG(image, to: url) else { continue }
             do {
                 try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [
                     .fillColor: NSColor.black
@@ -991,10 +1037,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
             }
         }
 
-        if Date().timeIntervalSince1970 >= suppressPruneUntil {
-            pruneUnusedWallpaperFiles(keeping: written)
-        }
-
         // WallpaperAgent sometimes silently drops a screen — verify and retry.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.verifyWallpapers()
@@ -1002,8 +1044,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     }
 
     private func verifyWallpapers() {
-        guard wallpaperRetries < 5 else { return }
-        wallpaperRetries += 1
+        guard !terminating, wallpaperRetries < 5 else { return }
 
         var missing = false
         for screen in NSScreen.screens {
@@ -1015,24 +1056,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
                 continue
             }
         }
+        // Only failed checks use up the retry budget.
         if missing {
+            wallpaperRetries += 1
             applyWallpapers()
         }
     }
 
-    private func savePNG(_ image: CGImage, name: String) -> URL? {
-        let dir = Self.wallpaperDirectory
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent(name + ".png")
+    /// Atomic write, so a slot macOS is still reading is never half-written.
+    private func savePNG(_ image: CGImage, to url: URL) -> Bool {
+        try? FileManager.default.createDirectory(at: Self.wallpaperDirectory, withIntermediateDirectories: true)
         let rep = NSBitmapImageRep(cgImage: image)
-        guard let data = rep.representation(using: .png, properties: [:]) else { return nil }
+        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
         do {
             try data.write(to: url, options: .atomic)
         } catch {
             NSLog("AffirmationWallpaper: wallpaper write failed: %@", error.localizedDescription)
-            return nil
+            return false
         }
-        return url
+        return true
     }
 
     private static var wallpaperDirectory: URL {
@@ -1048,6 +1090,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SettingsHost {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminating = true
         timer?.invalidate()
         timer = nil
 
